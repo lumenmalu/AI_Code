@@ -174,7 +174,7 @@ cmd_add() {
     echo ""
     echo "复用已有 SSH 别名(可选):"
     echo "  若该机器已用 codex-ssh 或其他方式配过免密,填写其 SSH 别名可直接复用(免重新配密钥)。"
-    echo "  例: codex 配置的 robot31_94 。留空则本工具会单独生成 claude_${alias} 别名。"
+    echo "  例: ~/.ssh/config 里的 Nvidia-105-wlan 。留空则本工具会单独生成 claude_${alias} 别名。"
     read -rp "复用的 SSH 别名(留空跳过): " ssh_alias
 
     echo ""
@@ -234,12 +234,10 @@ setup_ssh_key() {
         else
             msg_err "配置中 SSH_ALIAS='${SSH_ALIAS}',但 ~/.ssh/config 未找到该别名"
             echo "  请先创建该别名(二选一):"
-            echo "    1) 若 codex-ssh 也有该主机(推荐,免密只配一次):"
-            echo "         cd ~/Documents/AI_Code/Codex/codex-ssh && ./remote-codex.sh setup-ssh ${SSH_ALIAS}"
-            echo "       配好后本工具自动复用,无需再运行 setup-ssh"
+            echo "    1) 在 ~/.ssh/config 中添加 Host ${SSH_ALIAS}(Claude 与 Codex 填同一个别名,免密只配一次)"
             echo "    2) 或清空 ${CONF_DIR}/${alias}.conf 中的 SSH_ALIAS,再运行:"
             echo "         ./remote-claude.sh setup-ssh ${alias}"
-            echo "       本工具将独立生成 claude_${alias} 别名(与 codex 各自独立密钥)"
+            echo "       本工具将独立生成 claude_${alias} 别名"
             return 1
         fi
     fi

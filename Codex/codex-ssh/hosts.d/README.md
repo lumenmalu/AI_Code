@@ -13,7 +13,7 @@
 方式二: 复制现有配置后手动修改
 
 ```bash
-cp robot1.conf robot2.conf
+cp nvidia8_180.conf robot2.conf
 # 编辑 robot2.conf,修改用户名、IP、目录、挂载点
 ```
 
@@ -26,6 +26,7 @@ cp robot1.conf robot2.conf
 | `REMOTE_DIR`   | 是 | 远程项目目录(绝对路径) |
 | `LOCAL_MOUNT`  | 是 | 本地挂载点,每台主机应不同 |
 | `SSH_PORT`     | 否 | SSH 端口,默认 22 |
+| `SSH_ALIAS`    | 否 | 复用已有的 SSH 别名(如 Nvidia-105-wlan),留空则使用文件名别名 |
 | `SANDBOX_MODE` | 否 | `workspace-write`(默认) 或 `danger-full-access` |
 
 ## 典型场景
@@ -34,8 +35,8 @@ cp robot1.conf robot2.conf
 
 ```text
 hosts.d/
-├── robot1.conf     # 192.168.31.94 机器人主控
-├── robot2.conf     # 192.168.31.95 机器人从机
+├── nvidia8_180.conf  # 10.17.8.180 Nvidia(复用别名 Nvidia-105-wlan)
+├── robot31_105.conf  # 192.168.31.105 机器人从机
 ├── gpu-box.conf    # 192.168.1.50  GPU 训练服务器
 └── dev-server.conf # dev.example.com 开发服务器
 ```
@@ -43,9 +44,9 @@ hosts.d/
 使用:
 
 ```bash
-./remote-codex.sh mount robot1      # 挂载机器人1
-./remote-codex.sh mount gpu-box     # 挂载 GPU 服务器
-./remote-codex.sh codex robot1      # 编辑机器人1代码
+./remote-codex.sh mount nvidia8_180      # 挂载 Nvidia
+./remote-codex.sh mount gpu-box          # 挂载 GPU 服务器
+./remote-codex.sh codex nvidia8_180      # 编辑 Nvidia 上的代码
 ./remote-codex.sh mount-all         # 一次挂载全部
 ./remote-codex.sh status            # 查看全部状态
 ```

@@ -10,8 +10,8 @@
 ┌──────────────────────────────────────────────────┐
 │  remote-codex.sh (多主机管理器)                   │
 │                                                   │
-│  hosts.d/robot1.conf ──> SSHFS ──> 机器人1        │
-│  hosts.d/robot2.conf ──> SSHFS ──> 机器人2        │
+│  hosts.d/nvidia8_180.conf ──> SSHFS ──> Nvidia (8.180) │
+│  hosts.d/robot31_105.conf ──> SSHFS ──> 机器人 (31.105) │
 │  hosts.d/gpu-box.conf ─> SSHFS ──> GPU 服务器      │
 │                                                   │
 │  Codex CLI ──> 本地挂载点 ──> 编辑远程文件         │
@@ -32,7 +32,7 @@ codex-ssh/
 ├── README.md              # 本文档
 └── hosts.d/               # 主机配置目录
     ├── README.md          # 配置说明
-    ├── robot1.conf        # 示例: 机器人1
+    ├── nvidia8_180.conf   # 10.17.8.180(复用别名 Nvidia-105-wlan)
     └── ...                # 每台主机一个 .conf 文件
 ```
 
@@ -57,59 +57,49 @@ ls /dev/fuse
 
 ```bash
 cd ~/Documents/AI_Code/Codex/codex-ssh
-./remote-codex.sh add robot31_94
 ./remote-codex.sh add robot31_105
 ```
 
-按提示输入:
-
-```text
-SSH 用户名: pnd-humanoid
-IP 地址或域名: 192.168.31.94
-SSH 端口 [22]: (回车默认)
-远程项目目录(绝对路径): /home/pnd-humanoid/Documents/test/luchuang/test_lu
-本地挂载点 [~/remote/robot1]: (回车默认)
-沙箱模式选择 [1]: (回车默认 workspace-write)
-```
+`nvidia8_180` 已写好，对应 `nvidia@10.17.8.180:/home/nvidia/atom`，并复用 SSH 别名 `Nvidia-105-wlan`。新机器按提示输入用户名、IP、目录；若 `~/.ssh/config` 已有别名，在「复用的 SSH 别名」里填上即可。
 
 也可以直接复制示例配置:
 
 ```bash
-cp hosts.d/robot1.conf hosts.d/robot2.conf
-# 编辑 robot2.conf 修改用户名/IP/目录/挂载点
+cp hosts.d/nvidia8_180.conf hosts.d/robot2.conf
+# 编辑 robot2.conf 修改用户名/IP/目录/挂载点/SSH 别名
 ```
 
 ### 第三步: 设置 SSH 免密登录(推荐)
 
 ```bash
-./remote-codex.sh setup-ssh robot1
+./remote-codex.sh setup-ssh robot31_105
 ```
 
 该命令会自动:
 
-1. 生成独立密钥 `~/.ssh/codex_robot1_key`
-2. 将公钥复制到远程(需要输入一次远程密码)
-3. 在 `~/.ssh/config` 中添加别名配置
+1. 若 conf 里的 `SSH_ALIAS` 已在 `~/.ssh/config` 中，直接复用，不再生成密钥
+2. 否则生成独立密钥 `~/.ssh/codex_<别名>_key`，把公钥复制到远程（需要输入一次远程密码），并写入 `~/.ssh/config`
 
-设置后可直接 `ssh robot1` 连接,SSHFS 挂载也不再输密码。
+`nvidia8_180` 已复用 `Nvidia-105-wlan`，这一步可以跳过。设置后可直接 `ssh Nvidia-105-wlan` 连接。
 
 ### 第四步: 日常使用
 
 ```bash
-./remote-codex.sh mount robot31_94     # 挂载远程目录
-./remote-codex.sh codex robot31_94     # 启动 Codex 编辑远程代码
-./remote-codex.sh gen-agents robot31_94  # 生成 AGENTS.md(远程命令执行说明)
-./remote-codex.sh status           # 查看所有主机状态
-./remote-codex.sh status robot31_94
-./remote-codex.sh umount robot31_94    # 用完后卸载
+./remote-codex.sh mount nvidia8_180     # 挂载远程目录
+./remote-codex.sh gen-agents nvidia8_180  # 生成 AGENTS.md(远程命令执行说明)
+./remote-codex.sh codex nvidia8_180     # 启动 Codex 编辑远程代码
+./remote-codex.sh status                # 查看所有主机状态
+./remote-codex.sh status nvidia8_180
+./remote-codex.sh umount nvidia8_180    # 用完后卸载
 ```
 
+另一台主机同样操作，把别名换成 `robot31_105`：
+
 ```bash
-  挂载:   ./remote-codex.sh mount robot31_105
-  启动:   ./remote-codex.sh codex robot31_105
-  ./remote-codex.sh gen-agents robot31_105  # 生成 AGENTS.md(远程命令执行说明)
-  状态:   ./remote-codex.sh status robot31_105
-  ./remote-codex.sh umount robot31_105    # 用完后卸载
+./remote-codex.sh mount robot31_105
+./remote-codex.sh gen-agents robot31_105
+./remote-codex.sh codex robot31_105
+./remote-codex.sh umount robot31_105
 ```
 
 
@@ -137,7 +127,7 @@ cp hosts.d/robot1.conf hosts.d/robot2.conf
 
 ```bash
 # 添加三台主机
-./remote-codex.sh add robot1      # 192.168.31.94 主控
+./remote-codex.sh add robot1      # 10.17.8.180 主控
 ./remote-codex.sh add robot2      # 192.168.31.95 从机
 ./remote-codex.sh add gpu-box     # 192.168.1.50  GPU 服务器
 
@@ -165,7 +155,8 @@ REMOTE_HOST="IP或域名"            # 远程地址(必填)
 SSH_PORT="22"                     # SSH 端口(可选,默认22)
 REMOTE_DIR="/远程/项目/路径"      # 远程项目目录(必填,绝对路径)
 LOCAL_MOUNT="$HOME/remote/别名"  # 本地挂载点(必填,每台不同;与 claude-ssh 共享)
-SANDBOX_MODE="workspace-write"    # 沙箱模式(可选)
+SSH_ALIAS="Nvidia-105-wlan"      # 复用已有 SSH 别名(可选,留空则使用文件名别名)
+SANDBOX_MODE="danger-full-access" # 沙箱模式(可选;远程 ssh 需要完全访问)
 ```
 
 沙箱模式:
@@ -202,11 +193,11 @@ SANDBOX_MODE="danger-full-access"
 同时使用：
 
 ```bash
-./remote-codex.sh  mount robot31_94           # 挂载一次(claude 也可挂,共用)
-./remote-codex.sh  gen-agents     robot31_94  # AGENTS.md(给 Codex)
-./remote-claude.sh gen-claude-md robot31_94   # CLAUDE.md(给 Claude)
-./remote-codex.sh  codex  robot31_94          # 终端 A: Codex
-./remote-claude.sh claude robot31_94          # 终端 B: Claude Code
+./remote-codex.sh  mount nvidia8_180          # 挂载一次(claude 也可挂,共用)
+./remote-codex.sh  gen-agents     nvidia8_180 # AGENTS.md(给 Codex)
+./remote-claude.sh gen-claude-md nvidia8_180  # CLAUDE.local.md(给 Claude)
+./remote-codex.sh  codex  nvidia8_180         # 终端 A: Codex
+./remote-claude.sh claude nvidia8_180         # 终端 B: Claude Code
 ```
 
 > ⚠️ 卸载需协调：任一方 `umount` 后两者都不可访问。同时编辑同一文件可能冲突。
@@ -242,13 +233,13 @@ SSHFS 适合编辑代码,不适合大量文件操作。搜索文件建议用 `rg
 
 ```bash
 # 1. 测试 SSH 连接
-ssh robot1
+ssh Nvidia-105-wlan
 
 # 2. 测试远程目录是否存在
-ssh robot1 "ls -d /远程/项目/路径"
+ssh Nvidia-105-wlan "ls -d /home/nvidia/atom"
 
 # 3. 查看状态
-./remote-codex.sh status robot1
+./remote-codex.sh status nvidia8_180
 ```
 
 ## 与 VS Code Remote 的区别

@@ -12,8 +12,8 @@
 ┌──────────────────────────────────────────────────┐
 │  remote-claude.sh (多主机管理器)                  │
 │                                                   │
-│  hosts.d/robot31_94.conf ─> SSHFS ─> 机器人1      │
-│  hosts.d/robot31_105.conf > SSHFS ─> 机器人2      │
+│  hosts.d/nvidia8_180.conf ─> SSHFS ─> Nvidia (8.180) │
+│  hosts.d/robot31_105.conf ─> SSHFS ─> 机器人 (31.105) │
 │  hosts.d/gpu-box.conf ────> SSHFS ─> GPU 服务器    │
 │                                                   │
 │  Claude Code ─> 本地挂载点 ─> 编辑远程文件         │
@@ -35,7 +35,7 @@ claude-ssh/
 ├── README.md               # 本文档
 └── hosts.d/                # 主机配置目录
     ├── README.md           # 配置说明
-    ├── robot31_94.conf     # 示例: 192.168.31.94(复用 codex 免密)
+    ├── nvidia8_180.conf    # 10.17.8.180(复用别名 Nvidia-105-wlan)
     └── ...                 # 每台主机一个 .conf 文件
 ```
 
@@ -85,8 +85,8 @@ SSH 端口 [22]: (回车默认)
 也可以直接复制示例配置：
 
 ```bash
-cp hosts.d/robot31_94.conf hosts.d/robot31_105.conf
-# 编辑 robot31_105.conf 修改 IP/目录/挂载点
+cp hosts.d/nvidia8_180.conf hosts.d/robot2.conf
+# 编辑 robot2.conf 修改 IP/目录/挂载点/SSH 别名
 ```
 
 ### 第二步: 设置 SSH 免密登录(新机器需要)
@@ -101,18 +101,18 @@ cp hosts.d/robot31_94.conf hosts.d/robot31_105.conf
 2. 将公钥复制到远程（需要输入一次远程密码）
 3. 在 `~/.ssh/config` 中添加别名 `claude_robot31_105`
 
-> **复用 codex 免密（免配置）**：如果该机器已用 codex-ssh 配过免密，只需在 conf 里设 `SSH_ALIAS="robot31_94"`（对应的别名），即可跳过本步。本仓库自带的 `robot31_94.conf` 已这样配置。
+> **复用已有免密（免配置）**：如果 `~/.ssh/config` 里已有该机器，只需在 conf 里设 `SSH_ALIAS`（如 `Nvidia-105-wlan`），即可跳过本步。本仓库自带的 `nvidia8_180.conf` 已这样配置，Claude 与 Codex 共用这一别名。
 
 ### 第三步: 日常使用
 
 ```bash
 cd ~/Documents/AI_Code/Claude/claude-ssh
-./remote-claude.sh mount robot31_94            # 挂载远程目录
-./remote-claude.sh gen-claude-md robot31_94    # 生成 CLAUDE.md(让 Claude 知道如何远程执行命令)
-./remote-claude.sh claude robot31_94           # 启动 Claude Code 编辑远程代码
-./remote-claude.sh claude robot31_94 -y        # 同上,但跳过权限询问(更流畅)
+./remote-claude.sh mount nvidia8_180            # 挂载远程目录
+./remote-claude.sh gen-claude-md nvidia8_180    # 生成 CLAUDE.local.md(让 Claude 知道如何远程执行命令)
+./remote-claude.sh claude nvidia8_180           # 启动 Claude Code 编辑远程代码
+./remote-claude.sh claude nvidia8_180 -y        # 同上,但跳过权限询问(更流畅)
 ./remote-claude.sh status                      # 查看所有主机状态
-./remote-claude.sh umount robot31_94           # 用完后卸载
+./remote-claude.sh umount nvidia8_180           # 用完后卸载
 ```
 
 ```bash
@@ -154,7 +154,7 @@ cd ~/Documents/AI_Code/Claude/claude-ssh
 
 ```bash
 # 添加三台主机
-./remote-claude.sh add robot1      # 192.168.31.94 主控
+./remote-claude.sh add robot1      # 10.17.8.180 主控
 ./remote-claude.sh add robot2      # 192.168.31.95 从机
 ./remote-claude.sh add gpu-box     # 192.168.1.50  GPU 服务器
 
@@ -182,7 +182,7 @@ REMOTE_HOST="IP或域名"                # 远程地址(必填)
 SSH_PORT="22"                         # SSH 端口(可选,默认22)
 REMOTE_DIR="/远程/项目/路径"          # 远程项目目录(必填,绝对路径)
 LOCAL_MOUNT="$HOME/remote/别名" # 本地挂载点(必填,每台不同;与 codex-ssh 共享)
-SSH_ALIAS="robot31_94"                # 复用已有 SSH 别名(可选,留空则生成 claude_别名)
+SSH_ALIAS="Nvidia-105-wlan"          # 复用已有 SSH 别名(可选,留空则生成 claude_别名)
 SKIP_PERMISSIONS="no"                 # 权限模式(可选,no=询问/yes=跳过)
 ```
 
@@ -190,7 +190,7 @@ SKIP_PERMISSIONS="no"                 # 权限模式(可选,no=询问/yes=跳过
 
 | 场景 | 配置 | 效果 |
 |------|------|------|
-| 复用 codex 已配免密 | `SSH_ALIAS="robot31_94"` | 直接用，无需 setup-ssh |
+| 复用已有免密 | `SSH_ALIAS="Nvidia-105-wlan"` | 直接用，无需 setup-ssh |
 | 本工具独立免密 | `SSH_ALIAS=""` + `setup-ssh` | 生成 `claude_<别名>` 别名与密钥 |
 | 用密码登录 | `SSH_ALIAS=""`，不 setup-ssh | 挂载时输密码（不推荐，SSHFS 体验差） |
 
@@ -231,15 +231,15 @@ Claude Code 会自动合并加载两者。`gen-claude-md` 用**标记段**（`<!
 
 ```bash
 # 1. 挂载一次(用 claude 或 codex 任一即可,二者挂载点相同)
-./remote-claude.sh mount robot31_94
+./remote-claude.sh mount nvidia8_180
 
 # 2. 生成两个指令文件(各自生成,共存于同一挂载点)
-./remote-claude.sh gen-claude-md robot31_94    # 生成 CLAUDE.md(给 Claude)
-./remote-codex.sh  gen-agents     robot31_94    # 生成 AGENTS.md(给 Codex)
+./remote-claude.sh gen-claude-md nvidia8_180    # 生成 CLAUDE.local.md(给 Claude)
+./remote-codex.sh  gen-agents     nvidia8_180   # 生成 AGENTS.md(给 Codex)
 
 # 3. 不同终端分别启动,可同时运行
-./remote-claude.sh claude robot31_94            # 终端 A: Claude Code
-./remote-codex.sh  codex  robot31_94            # 终端 B: Codex
+./remote-claude.sh claude nvidia8_180           # 终端 A: Claude Code
+./remote-codex.sh  codex  nvidia8_180           # 终端 B: Codex
 ```
 
 > ⚠️ **卸载需协调**：任一方 `umount` 后，两个工具都不可访问该目录，需重新 `mount`。
@@ -268,21 +268,21 @@ SSHFS 适合编辑代码，不适合大量文件操作。搜索文件建议用 `
 ### SSHFS 断连后无法操作
 
 ```bash
-./remote-claude.sh umount robot31_94   # 先强制卸载
-./remote-claude.sh mount robot31_94    # 重新挂载
+./remote-claude.sh umount nvidia8_180   # 先强制卸载
+./remote-claude.sh mount nvidia8_180    # 重新挂载
 ```
 
 ### 挂载失败排查
 
 ```bash
 # 1. 测试 SSH 连接(远程需在线)
-ssh robot31_94            # 或 ssh claude_robot31_94 / ssh 用户@IP
+ssh Nvidia-105-wlan            # 或 ssh claude_<别名> / ssh 用户@IP
 
 # 2. 测试远程目录是否存在
-ssh robot31_94 "ls -d /远程/项目/路径"
+ssh Nvidia-105-wlan "ls -d /home/nvidia/atom"
 
 # 3. 查看状态
-./remote-claude.sh status robot31_94
+./remote-claude.sh status nvidia8_180
 ```
 
 ### Claude 执行命令时报错或卡住
@@ -301,4 +301,4 @@ ssh robot31_94 "ls -d /远程/项目/路径"
 | 文件编辑 | 远程 | SSHFS 本地透传 | SSHFS 本地透传 |
 | 命令执行 | 远程 | SSH(需 AGENTS.md) | SSH(需 CLAUDE.md) |
 | 多主机管理 | 配置较繁琐 | hosts.d 一键管理 | hosts.d 一键管理 |
-| 复用免密 | - | - | ✅ 支持 SSH_ALIAS 复用 |
+| 复用免密 | - | ✅ SSH_ALIAS | ✅ SSH_ALIAS |

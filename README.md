@@ -20,8 +20,8 @@
 ┌──────────────────────────────────────────────────────────┐
 │  remote-claude.sh / remote-codex.sh (多主机管理器)        │
 │                                                           │
-│  hosts.d/robot31_94.conf  ──> SSHFS ──> 机器人1 (31.94)  │
-│  hosts.d/robot31_105.conf ──> SSHFS ──> 机器人2 (31.105) │
+│  hosts.d/nvidia8_180.conf  ──> SSHFS ──> Nvidia (10.17.8.180) │
+│  hosts.d/robot31_105.conf  ──> SSHFS ──> 机器人 (31.105)     │
 │  hosts.d/gpu-box.conf     ──> SSHFS ──> GPU 服务器        │
 │                                                           │
 │  Claude Code / Codex ──> 本地挂载点 ──> 编辑远程文件       │
@@ -92,12 +92,10 @@ sudo apt install openssh-server && systemctl enable --now ssh
 ```bash
 cd ~/Documents/AI_Code/Claude/claude-ssh
 
-./remote-claude.sh add robot31_94          # 1. 交互式添加主机
-./remote-claude.sh setup-ssh robot31_94    # 2. 配置 SSH 免密（首次，需输一次远程密码）
-./remote-claude.sh mount robot31_94        # 3. 挂载远程目录
-./remote-claude.sh gen-claude-md robot31_94 # 4. 生成 CLAUDE.local.md（告知远程命令执行方式）
-./remote-claude.sh claude robot31_94       # 5. 启动 Claude Code 编辑远程代码
-./remote-claude.sh umount robot31_94       # 用完卸载
+./remote-claude.sh mount nvidia8_180        # 1. 挂载远程目录（已复用 SSH 别名 Nvidia-105-wlan）
+./remote-claude.sh gen-claude-md nvidia8_180 # 2. 生成 CLAUDE.local.md（告知远程命令执行方式）
+./remote-claude.sh claude nvidia8_180       # 3. 启动 Claude Code 编辑远程代码
+./remote-claude.sh umount nvidia8_180       # 用完卸载
 ```
 
 ### 用 Codex（codex-ssh）
@@ -105,12 +103,10 @@ cd ~/Documents/AI_Code/Claude/claude-ssh
 ```bash
 cd ~/Documents/AI_Code/Codex/codex-ssh
 
-./remote-codex.sh add robot31_94           # 1. 交互式添加主机
-./remote-codex.sh setup-ssh robot31_94     # 2. 配置 SSH 免密（首次，需输一次远程密码）
-./remote-codex.sh mount robot31_94         # 3. 挂载远程目录
-./remote-codex.sh gen-agents robot31_94    # 4. 生成 AGENTS.md（告知远程命令执行方式）
-./remote-codex.sh codex robot31_94         # 5. 启动 Codex 编辑远程代码
-./remote-codex.sh umount robot31_94        # 用完卸载
+./remote-codex.sh mount nvidia8_180         # 1. 挂载远程目录（已复用 SSH 别名 Nvidia-105-wlan）
+./remote-codex.sh gen-agents nvidia8_180    # 2. 生成 AGENTS.md（告知远程命令执行方式）
+./remote-codex.sh codex nvidia8_180         # 3. 启动 Codex 编辑远程代码
+./remote-codex.sh umount nvidia8_180        # 用完卸载
 ```
 
 ---
@@ -122,21 +118,21 @@ cd ~/Documents/AI_Code/Codex/codex-ssh
 - **挂载一次共用**：SSHFS 一个挂载点只能挂一次，用任一工具 `mount` 即可，另一工具检测到已挂载会自动复用。
 - **指令文件共存**：Claude 读 `CLAUDE.local.md`、Codex 读 `AGENTS.md`，两个文件共存于挂载点，互不影响。
 - **远程命令共用同一 SSH 别名**：均通过 `ssh <别名> "cd <远程目录> && <命令>"` 执行。
-- **复用免密**：claude-ssh 支持 `SSH_ALIAS` 字段直接复用 codex-ssh 已配好的免密别名，免密只需在 codex 配一次。
+- **复用免密**：两边都支持 `SSH_ALIAS`，指向 `~/.ssh/config` 里已有的别名。`nvidia8_180` 复用 `Nvidia-105-wlan`，免密只配一次。
 
 同时使用流程：
 
 ```bash
 # 1. 挂载一次（任一工具即可，二者挂载点相同）
-./remote-claude.sh mount robot31_94
+./remote-claude.sh mount nvidia8_180
 
 # 2. 生成两个指令文件（各自生成，共存于同一挂载点）
-./remote-claude.sh gen-claude-md robot31_94    # CLAUDE.local.md（给 Claude）
-./remote-codex.sh  gen-agents     robot31_94   # AGENTS.md（给 Codex）
+./remote-claude.sh gen-claude-md nvidia8_180    # CLAUDE.local.md（给 Claude）
+./remote-codex.sh  gen-agents     nvidia8_180   # AGENTS.md（给 Codex）
 
 # 3. 不同终端分别启动，可同时运行
-./remote-claude.sh claude robot31_94           # 终端 A: Claude Code
-./remote-codex.sh  codex  robot31_94           # 终端 B: Codex
+./remote-claude.sh claude nvidia8_180           # 终端 A: Claude Code
+./remote-codex.sh  codex  nvidia8_180           # 终端 B: Codex
 ```
 
 > ⚠️ **卸载需协调**：任一方 `umount` 后，两个工具都不可访问该目录，需重新 `mount`。
@@ -176,7 +172,7 @@ cd ~/Documents/AI_Code/Codex/codex-ssh
 | `REMOTE_DIR` | ✅ | ✅ | 远程项目目录，绝对路径（必填） |
 | `LOCAL_MOUNT` | ✅ | ✅ | 本地挂载点，每台不同，两工具共享（必填） |
 | `SSH_PORT` | ✅ | ✅ | SSH 端口，默认 22 |
-| `SSH_ALIAS` | ✅ | — | 复用已有 SSH 免密别名 |
+| `SSH_ALIAS` | ✅ | ✅ | 复用已有 SSH 免密别名 |
 | `SKIP_PERMISSIONS` | ✅ | — | `no` 询问权限 / `yes` 跳过权限 |
 | `SANDBOX_MODE` | — | ✅ | `workspace-write` / `danger-full-access` |
 
@@ -219,8 +215,8 @@ SSHFS 适合编辑代码，不适合大量文件操作。搜索文件建议用 `
 ### SSHFS 断连后无法操作
 
 ```bash
-./remote-claude.sh umount robot31_94   # 先强制卸载（codex 同理）
-./remote-claude.sh mount robot31_94    # 重新挂载
+./remote-claude.sh umount nvidia8_180   # 先强制卸载（codex 同理）
+./remote-claude.sh mount nvidia8_180    # 重新挂载
 ```
 
 ### AI 工具执行命令时报错或卡住

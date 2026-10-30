@@ -38,6 +38,13 @@ check_sshfs() {
 
 ensure_conf_dir() { mkdir -p "$CONF_DIR"; }
 
+# 检查 ~/.ssh/config 中是否存在某个 Host 别名
+has_ssh_host() {
+    local host="$1"
+    [[ -z "$host" ]] && return 1
+    grep -qE "^Host[[:space:]]+${host}([[:space:]]|$)" "$HOME/.ssh/config" 2>/dev/null
+}
+
 # 加载指定主机的配置,变量加载到当前 shell
 load_host_config() {
     local alias="$1"
@@ -50,7 +57,7 @@ load_host_config() {
         return 1
     fi
     REMOTE_USER="" REMOTE_HOST="" REMOTE_DIR="" LOCAL_MOUNT=""
-    SANDBOX_MODE="workspace-write" SSH_PORT="22"
+    SANDBOX_MODE="workspace-write" SSH_PORT="22" SSH_ALIAS=""
     # shellcheck disable=SC1090
     source "$conf"
     local ok=1
@@ -60,6 +67,26 @@ load_host_config() {
         return 1
     fi
     return 0
+}
+
+# 解析实际使用的 SSH 别名与挂载目标
+# 优先级: SSH_ALIAS(复用已有别名) > 文件名别名 > user@host(需密码)
+# 设置全局变量: USE_ALIAS(可能为空), SSH_TARGET, NEED_PASSWORD(0/1)
+resolve_ssh_target() {
+    local alias="$1"
+    USE_ALIAS=""
+    NEED_PASSWORD=0
+    if [[ -n "${SSH_ALIAS:-}" ]] && has_ssh_host "$SSH_ALIAS"; then
+        USE_ALIAS="$SSH_ALIAS"
+        SSH_TARGET="${SSH_ALIAS}:${REMOTE_DIR}"
+    elif has_ssh_host "$alias"; then
+        USE_ALIAS="$alias"
+        SSH_TARGET="${alias}:${REMOTE_DIR}"
+    else
+        USE_ALIAS=""
+        SSH_TARGET="${REMOTE_USER}@${REMOTE_HOST}:${REMOTE_DIR}"
+        NEED_PASSWORD=1
+    fi
 }
 
 list_host_aliases() {
@@ -87,7 +114,8 @@ cmd_list() {
         local alias status_icon
         alias="$(basename "$f" .conf)"
         found=1
-        REMOTE_USER="" REMOTE_HOST="" REMOTE_DIR="" LOCAL_MOUNT="" SANDBOX_MODE="workspace-write" SSH_PORT="22"
+        REMOTE_USER="" REMOTE_HOST="" REMOTE_DIR="" LOCAL_MOUNT=""
+        SANDBOX_MODE="workspace-write" SSH_PORT="22" SSH_ALIAS=""
         # shellcheck disable=SC1090
         source "$f" 2>/dev/null || true
         if [[ -n "$LOCAL_MOUNT" ]] && is_mounted "$LOCAL_MOUNT"; then
@@ -95,8 +123,9 @@ cmd_list() {
         else
             status_icon="${RED}未挂载${NC}"
         fi
-        printf "  ${CYAN}%-14s${NC}  %s@%s:%s  [%b]\n" \
-            "$alias" "${REMOTE_USER:-?}" "${REMOTE_HOST:-?}" "${REMOTE_DIR:-?}" "$status_icon"
+        local ssh_info="${SSH_ALIAS:-${REMOTE_USER:-?}@${REMOTE_HOST:-?}}"
+        printf "  ${CYAN}%-16s${NC}  %s:%s  [%b]\n" \
+            "$alias" "$ssh_info" "${REMOTE_DIR:-?}" "$status_icon"
     done
     if [[ $found -eq 0 ]]; then
         echo "  (暂无主机配置)"
@@ -126,7 +155,7 @@ cmd_add() {
 
     echo -e "${BOLD}=== 添加主机: ${alias} ===${NC}"
     echo ""
-    local remote_user remote_host remote_dir local_mount sandbox_mode ssh_port
+    local remote_user remote_host remote_dir local_mount sandbox_mode ssh_port ssh_alias
     read -rp "SSH 用户名: " remote_user
     read -rp "IP 地址或域名: " remote_host
     read -rp "SSH 端口 [22]: " ssh_port
@@ -139,6 +168,12 @@ cmd_add() {
         msg_err "SSH 用户名、IP/域名、远程项目目录不能为空"
         exit 1
     fi
+
+    echo ""
+    echo "复用已有 SSH 别名(可选):"
+    echo "  若 ~/.ssh/config 已有该机器(如 Nvidia-105-wlan),填写后挂载与远程命令直接复用,免再配密钥。"
+    echo "  Claude 与 Codex 填同一个别名即可共用免密。留空则使用本别名 ${alias}。"
+    read -rp "复用的 SSH 别名(留空跳过): " ssh_alias
 
     echo ""
     echo "沙箱模式:"
@@ -159,15 +194,21 @@ REMOTE_HOST="${remote_host}"
 SSH_PORT="${ssh_port}"
 REMOTE_DIR="${remote_dir}"
 LOCAL_MOUNT="${local_mount}"
+SSH_ALIAS="${ssh_alias}"
 SANDBOX_MODE="${sandbox_mode}"
 EOF
 
     echo ""
     msg_ok "配置已保存: $conf"
     echo ""
-    read -rp "是否现在设置 SSH 免密登录? (y/N): " setup_ssh
-    if [[ "$setup_ssh" =~ ^[Yy]$ ]]; then
-        setup_ssh_key "$alias"
+
+    if [[ -n "$ssh_alias" ]] && has_ssh_host "$ssh_alias"; then
+        msg_ok "检测到 SSH 别名 '${ssh_alias}' 已存在,直接复用,无需配置免密"
+    else
+        read -rp "是否现在设置 SSH 免密登录? (y/N): " setup_ssh
+        if [[ "$setup_ssh" =~ ^[Yy]$ ]]; then
+            setup_ssh_key "$alias"
+        fi
     fi
     echo ""
     echo "下一步:"
@@ -180,6 +221,19 @@ EOF
 setup_ssh_key() {
     local alias="$1"
     load_host_config "$alias" || return 1
+
+    if [[ -n "${SSH_ALIAS:-}" ]]; then
+        if has_ssh_host "$SSH_ALIAS"; then
+            msg_ok "SSH 别名 '${SSH_ALIAS}' 已存在,直接复用"
+            return 0
+        else
+            msg_err "配置中 SSH_ALIAS='${SSH_ALIAS}',但 ~/.ssh/config 未找到该别名"
+            echo "  请先在 ~/.ssh/config 中添加 Host ${SSH_ALIAS},或清空 ${CONF_DIR}/${alias}.conf 中的 SSH_ALIAS 后重新运行:"
+            echo "    ./remote-codex.sh setup-ssh ${alias}"
+            return 1
+        fi
+    fi
+
     local key_file="$HOME/.ssh/codex_${alias}_key"
     if [[ ! -f "$key_file" ]]; then
         msg_info "生成 SSH 密钥: $key_file"
@@ -230,7 +284,9 @@ cmd_mount() {
         return 0
     fi
 
-    msg_info "正在挂载 ${REMOTE_USER}@${REMOTE_HOST}:${REMOTE_DIR} -> $LOCAL_MOUNT"
+    resolve_ssh_target "$alias"
+    msg_info "正在挂载 -> $LOCAL_MOUNT"
+    msg_info "SSH 目标: $SSH_TARGET"
     local mount_opts=(
         -o reconnect
         -o ServerAliveInterval=15
@@ -241,31 +297,31 @@ cmd_mount() {
         -o compression=yes
         -o noatime
     )
-    local ssh_target
-    if grep -q "Host ${alias}$" "$HOME/.ssh/config" 2>/dev/null; then
-        ssh_target="${alias}:${REMOTE_DIR}"
-        msg_info "使用 SSH 配置别名 '${alias}' 连接"
-    else
-        ssh_target="${REMOTE_USER}@${REMOTE_HOST}:${REMOTE_DIR}"
+    if [[ "$NEED_PASSWORD" -eq 1 ]]; then
         [[ "$SSH_PORT" != "22" ]] && mount_opts+=(-o "ssh_command=ssh -p ${SSH_PORT}")
-        echo "  (未检测到 SSH 密钥配置,可能需要输入密码)"
+        echo "  (未检测到 SSH 免密别名,可能需要输入密码;建议运行: ./remote-codex.sh setup-ssh ${alias})"
+    else
+        msg_info "使用 SSH 别名 '${USE_ALIAS}' 免密连接"
     fi
 
-    sshfs "$ssh_target" "$LOCAL_MOUNT" "${mount_opts[@]}" 2>&1 | sed 's/^/  /' || true
+    sshfs "$SSH_TARGET" "$LOCAL_MOUNT" "${mount_opts[@]}" 2>&1 | sed 's/^/  /' || true
 
     if is_mounted "$LOCAL_MOUNT"; then
         echo ""
         msg_ok "挂载成功: ${alias}"
         echo "  远程: ${REMOTE_USER}@${REMOTE_HOST}:${REMOTE_DIR}"
         echo "  本地: $LOCAL_MOUNT"
+        echo "  SSH 别名: ${USE_ALIAS:-（无,使用密码）}"
         echo ""
-        echo "  启动 Codex: ./remote-codex.sh codex ${alias}"
+        echo "  生成远程命令说明: ./remote-codex.sh gen-agents ${alias}"
+        echo "  启动 Codex:       ./remote-codex.sh codex ${alias}"
     else
         msg_err "挂载失败,请检查:"
         echo "  1. 远程电脑是否开机且 SSH 服务正常"
         echo "  2. 用户名、IP、端口是否正确"
         echo "  3. 远程目录 ${REMOTE_DIR} 是否存在"
-        echo "  4. 是否已设置免密登录(./remote-codex.sh setup-ssh ${alias})"
+        echo "  4. 是否已设置免密(./remote-codex.sh setup-ssh ${alias})"
+        echo "  5. 测试连接: ssh ${USE_ALIAS:-${REMOTE_USER}@${REMOTE_HOST}} "
         exit 1
     fi
 }
@@ -304,9 +360,12 @@ cmd_status() {
     local alias="${1:-}"
     if [[ -n "$alias" ]]; then
         load_host_config "$alias" || exit 1
+        resolve_ssh_target "$alias"
         echo -e "${BOLD}=== ${alias} ===${NC}"
         echo "  远程: ${REMOTE_USER}@${REMOTE_HOST}:${REMOTE_DIR} (端口 ${SSH_PORT})"
         echo "  本地: $LOCAL_MOUNT"
+        echo "  SSH 别名: ${USE_ALIAS:-（无,将使用密码）}"
+        echo "  沙箱模式: ${SANDBOX_MODE}"
         if is_mounted "$LOCAL_MOUNT"; then
             msg_ok "挂载状态: 已挂载"
             echo "  内容:"
@@ -356,20 +415,22 @@ cmd_gen_agents() {
         msg_err "${alias} 未挂载,请先挂载: ./remote-codex.sh mount ${alias}"
         exit 1
     fi
+    resolve_ssh_target "$alias"
+    local ssh_name="${USE_ALIAS:-${REMOTE_USER}@${REMOTE_HOST}}"
 
     # 渲染模板到临时文件
     local rendered
     rendered=$(mktemp)
     if [[ -f "$AGENTS_TEMPLATE" ]]; then
         sed \
-            -e "s|{{ALIAS}}|${alias}|g" \
+            -e "s|{{ALIAS}}|${ssh_name}|g" \
             -e "s|{{REMOTE_HOST}}|${REMOTE_HOST}|g" \
             -e "s|{{REMOTE_USER}}|${REMOTE_USER}|g" \
             -e "s|{{REMOTE_DIR}}|${REMOTE_DIR}|g" \
             "$AGENTS_TEMPLATE" > "$rendered"
     else
         printf '# AGENTS.md - 远程开发配置\n\n当前工作目录通过 SSHFS 挂载到远程服务器。\n\n- 主机别名: %s\n- 远程主机: %s\n- SSH 用户: %s\n- 远程目录: %s\n\n命令执行必须通过 SSH:\n\n    ssh %s "cd %s && <你的命令>"\n' \
-            "$alias" "$REMOTE_HOST" "$REMOTE_USER" "$REMOTE_DIR" "$alias" "$REMOTE_DIR" > "$rendered"
+            "$ssh_name" "$REMOTE_HOST" "$REMOTE_USER" "$REMOTE_DIR" "$ssh_name" "$REMOTE_DIR" > "$rendered"
     fi
 
     # 标记段写入 AGENTS.md,保留你在文件中的其他内容(不覆盖)
@@ -384,6 +445,7 @@ cmd_gen_agents() {
     echo "  -> Codex 自动读取 AGENTS.md"
     echo "  -> 重复运行只更新标记段,安全幂等"
     echo "  -> 提示:若不想把本段提交到项目 git,可将 AGENTS.md 加入 .gitignore"
+    echo "  -> SSH 别名: ${ssh_name}"
 }
 
 # remove - 删除主机配置
